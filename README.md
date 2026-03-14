@@ -16,9 +16,15 @@ The patch is meant to be integrated into the ST-provided Binutils/ld source layo
 
 In this workspace, the matching source tree example is:
 
-- [gnu-tools-for-stm32-13.3.rel1.20250523-0900](/c:/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/gnu-tools-for-stm32-13.3.rel1.20250523-0900)
+- [gnu-tools-for-stm32-13.3.rel1.20250523-0900](../gnu-tools-for-stm32-13.3.rel1.20250523-0900)
 
 Use a source tree that matches the linker/toolchain build you intend to patch. Do not apply the patch blindly to an unrelated Binutils version and expect identical anchors or APIs.
+
+## Related Documents
+
+- [how_to_add_json.md](how_to_add_json.md): end-to-end reference for integrating the patch, rebuilding GNU `ld`, and validating the generated JSON.
+- [README-CubeIDE.txt](README-CubeIDE.txt): short CubeIDE-oriented note for using a patched linker build.
+- [README-CubeIDE-DETAILED.md](README-CubeIDE-DETAILED.md): longer CubeIDE-oriented explanation of how the patched linker fits with `ld_viewer` and `ld_sniffer`.
 
 ## Files
 - `ldjson_options.def`: single source of truth for CLI option rows (X-macro).
