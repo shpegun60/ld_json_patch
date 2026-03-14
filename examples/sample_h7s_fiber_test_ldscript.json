@@ -1,0 +1,553 @@
+{
+  "format": {
+    "name": "ldscript-json",
+    "major": 10,
+    "minor": 0
+  },
+  "output": {
+    "entry_symbol": "0x8000c09"
+  },
+  "memory_regions": {
+    "items": [
+      {
+        "id": "r000001",
+        "name": "RAM",
+        "origin_hex": "0x24000000",
+        "length_hex": "0x71c00",
+        "attrs": "xrw"
+      },
+      {
+        "id": "r000002",
+        "name": "RAM_NONCACHEABLEBUFFER",
+        "origin_hex": "0x24071c00",
+        "length_hex": "0x400",
+        "attrs": "xrw"
+      },
+      {
+        "id": "r000003",
+        "name": "ITCM",
+        "origin_hex": "0x0",
+        "length_hex": "0x10000",
+        "attrs": "xrw"
+      },
+      {
+        "id": "r000004",
+        "name": "DTCM",
+        "origin_hex": "0x20000000",
+        "length_hex": "0x10000",
+        "attrs": "rw"
+      },
+      {
+        "id": "r000005",
+        "name": "SRAMAHB",
+        "origin_hex": "0x30000000",
+        "length_hex": "0x8000",
+        "attrs": "rw"
+      },
+      {
+        "id": "r000006",
+        "name": "BKPSRAM",
+        "origin_hex": "0x38800000",
+        "length_hex": "0x1000",
+        "attrs": "rw"
+      },
+      {
+        "id": "r000007",
+        "name": "FLASH",
+        "origin_hex": "0x8000000",
+        "length_hex": "0x10000",
+        "attrs": "xrw"
+      },
+      {
+        "id": "r000008",
+        "name": "*default*",
+        "origin_hex": "0x0",
+        "length_hex": "0xffffffffffffffff",
+        "attrs": ""
+      }
+    ],
+    "by_name": {
+      "RAM": ["r000001"],
+      "RAM_NONCACHEABLEBUFFER": ["r000002"],
+      "ITCM": ["r000003"],
+      "DTCM": ["r000004"],
+      "SRAMAHB": ["r000005"],
+      "BKPSRAM": ["r000006"],
+      "FLASH": ["r000007"],
+      "*default*": ["r000008"]
+    },
+    "null_name_ids": []
+  },
+  "output_sections": {
+    "items": [
+      {
+        "id": "s000001",
+        "name": "*ABS*",
+        "vma_region": null,
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000002",
+        "name": ".isr_vector",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": [
+          "*(.isr_vector)"
+        ]
+      },
+      {
+        "id": "s000003",
+        "name": ".text",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": [
+          "*(.text)",
+          "*(.text*)",
+          "*(.glue_7)",
+          "*(.glue_7t)",
+          "*(.eh_frame)",
+          "*(.init)",
+          "*(.fini)"
+        ]
+      },
+      {
+        "id": "s000004",
+        "name": ".vfp11_veneer",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000005",
+        "name": ".v4_bx",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000006",
+        "name": ".iplt",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000007",
+        "name": ".rodata",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": [
+          "*(.rodata)",
+          "*(.rodata*)"
+        ]
+      },
+      {
+        "id": "s000008",
+        "name": ".ARM.extab",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": [
+          "*(.ARM.extab*)",
+          "*(.gnu.linkonce.armextab.*)"
+        ]
+      },
+      {
+        "id": "s000009",
+        "name": ".ARM",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": [
+          "*(.ARM.exidx*)"
+        ]
+      },
+      {
+        "id": "s000010",
+        "name": ".preinit_array",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": [
+          "*(.preinit_array*)"
+        ]
+      },
+      {
+        "id": "s000011",
+        "name": ".init_array",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": [
+          "*(.init_array.*)",
+          "*(.init_array*)"
+        ]
+      },
+      {
+        "id": "s000012",
+        "name": ".fini_array",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": [
+          "*(.fini_array.*)",
+          "*(.fini_array*)"
+        ]
+      },
+      {
+        "id": "s000013",
+        "name": ".rel.dyn",
+        "vma_region": "FLASH",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000014",
+        "name": ".data",
+        "vma_region": "RAM",
+        "lma_region": "FLASH",
+        "script_subsections": [
+          "*(.data)",
+          "*(.data*)",
+          "*(.RamFunc)",
+          "*(.RamFunc*)"
+        ]
+      },
+      {
+        "id": "s000015",
+        "name": ".igot.plt",
+        "vma_region": "RAM",
+        "lma_region": "FLASH",
+        "script_subsections": []
+      },
+      {
+        "id": "s000016",
+        "name": ".bss",
+        "vma_region": "RAM",
+        "lma_region": "FLASH",
+        "script_subsections": [
+          "*(.bss)",
+          "*(.bss*)",
+          "*(COMMON)"
+        ]
+      },
+      {
+        "id": "s000017",
+        "name": "RW_NONCACHEABLE",
+        "vma_region": "RAM_NONCACHEABLEBUFFER",
+        "lma_region": null,
+        "script_subsections": [
+          "*(noncacheable_buffer)"
+        ]
+      },
+      {
+        "id": "s000018",
+        "name": "._user_heap_stack",
+        "vma_region": "DTCM",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000019",
+        "name": "/DISCARD/",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": [
+          "libc.a(*)",
+          "libm.a(*)",
+          "libgcc.a(*)"
+        ]
+      },
+      {
+        "id": "s000020",
+        "name": ".ARM.attributes",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": [
+          "*(.ARM.attributes)"
+        ]
+      },
+      {
+        "id": "s000021",
+        "name": ".debug_info",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000022",
+        "name": ".debug_abbrev",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000023",
+        "name": ".debug_loclists",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000024",
+        "name": ".debug_aranges",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000025",
+        "name": ".debug_rnglists",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000026",
+        "name": ".debug_line",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000027",
+        "name": ".debug_str",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000028",
+        "name": ".comment",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000029",
+        "name": ".debug_frame",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": []
+      },
+      {
+        "id": "s000030",
+        "name": ".debug_line_str",
+        "vma_region": "*default*",
+        "lma_region": null,
+        "script_subsections": []
+      }
+    ],
+    "by_name": {
+      "*ABS*": ["s000001"],
+      ".isr_vector": ["s000002"],
+      ".text": ["s000003"],
+      ".vfp11_veneer": ["s000004"],
+      ".v4_bx": ["s000005"],
+      ".iplt": ["s000006"],
+      ".rodata": ["s000007"],
+      ".ARM.extab": ["s000008"],
+      ".ARM": ["s000009"],
+      ".preinit_array": ["s000010"],
+      ".init_array": ["s000011"],
+      ".fini_array": ["s000012"],
+      ".rel.dyn": ["s000013"],
+      ".data": ["s000014"],
+      ".igot.plt": ["s000015"],
+      ".bss": ["s000016"],
+      "RW_NONCACHEABLE": ["s000017"],
+      "._user_heap_stack": ["s000018"],
+      "/DISCARD/": ["s000019"],
+      ".ARM.attributes": ["s000020"],
+      ".debug_info": ["s000021"],
+      ".debug_abbrev": ["s000022"],
+      ".debug_loclists": ["s000023"],
+      ".debug_aranges": ["s000024"],
+      ".debug_rnglists": ["s000025"],
+      ".debug_line": ["s000026"],
+      ".debug_str": ["s000027"],
+      ".comment": ["s000028"],
+      ".debug_frame": ["s000029"],
+      ".debug_line_str": ["s000030"]
+    },
+    "null_name_ids": []
+  },
+  "script_variables": {
+    "items": [
+      {
+        "id": "v000001",
+        "name": "_Min_Heap_Size",
+        "value_hex": "0x200",
+        "section": "ABS"
+      },
+      {
+        "id": "v000002",
+        "name": "_Min_Stack_Size",
+        "value_hex": "0x400",
+        "section": "ABS"
+      },
+      {
+        "id": "v000003",
+        "name": "__FLASH_BEGIN",
+        "value_hex": "0x8000000",
+        "section": "ABS"
+      },
+      {
+        "id": "v000004",
+        "name": "__FLASH_SIZE",
+        "value_hex": "0x10000",
+        "section": "ABS"
+      },
+      {
+        "id": "v000005",
+        "name": "__NONCACHEABLEBUFFER_BEGIN",
+        "value_hex": "0x24071c00",
+        "section": "._user_heap_stack"
+      },
+      {
+        "id": "v000006",
+        "name": "__NONCACHEABLEBUFFER_END",
+        "value_hex": "0x24071c00",
+        "section": "._user_heap_stack"
+      },
+      {
+        "id": "v000007",
+        "name": "__RAM_BEGIN",
+        "value_hex": "0x24000000",
+        "section": "ABS"
+      },
+      {
+        "id": "v000008",
+        "name": "__RAM_NONCACHEABLEBUFFER_SIZE",
+        "value_hex": "0x400",
+        "section": "ABS"
+      },
+      {
+        "id": "v000009",
+        "name": "__RAM_SIZE",
+        "value_hex": "0x71c00",
+        "section": "ABS"
+      },
+      {
+        "id": "v000010",
+        "name": "__bss_end__",
+        "value_hex": "0x24000eec",
+        "section": ".bss"
+      },
+      {
+        "id": "v000011",
+        "name": "__bss_start__",
+        "value_hex": "0x24000060",
+        "section": ".bss"
+      },
+      {
+        "id": "v000012",
+        "name": "__exidx_end",
+        "value_hex": "0x8002a30",
+        "section": ".ARM"
+      },
+      {
+        "id": "v000013",
+        "name": "__exidx_start",
+        "value_hex": "0x8002a30",
+        "section": ".ARM"
+      },
+      {
+        "id": "v000014",
+        "name": "__init_array_end",
+        "value_hex": "0x8002a38",
+        "section": ".init_array"
+      },
+      {
+        "id": "v000015",
+        "name": "__init_array_start",
+        "value_hex": "0x8002a30",
+        "section": ".init_array"
+      },
+      {
+        "id": "v000016",
+        "name": "__preinit_array_end",
+        "value_hex": "0x8002a30",
+        "section": ".preinit_array"
+      },
+      {
+        "id": "v000017",
+        "name": "__preinit_array_start",
+        "value_hex": "0x8002a30",
+        "section": ".preinit_array"
+      },
+      {
+        "id": "v000018",
+        "name": "_ebss",
+        "value_hex": "0x24000eec",
+        "section": ".bss"
+      },
+      {
+        "id": "v000019",
+        "name": "_edata",
+        "value_hex": "0x2400005c",
+        "section": ".data"
+      },
+      {
+        "id": "v000020",
+        "name": "_end",
+        "value_hex": "0x20000000",
+        "section": "._user_heap_stack"
+      },
+      {
+        "id": "v000021",
+        "name": "_estack",
+        "value_hex": "0x20010000",
+        "section": ".isr_vector"
+      },
+      {
+        "id": "v000022",
+        "name": "_etext",
+        "value_hex": "0x8002a2c",
+        "section": ".text"
+      },
+      {
+        "id": "v000023",
+        "name": "_sbss",
+        "value_hex": "0x24000060",
+        "section": ".bss"
+      },
+      {
+        "id": "v000024",
+        "name": "_sdata",
+        "value_hex": "0x24000000",
+        "section": ".data"
+      },
+      {
+        "id": "v000025",
+        "name": "_sidata",
+        "value_hex": "0x8002a48",
+        "section": "ABS"
+      }
+    ],
+    "by_name": {
+      "_Min_Heap_Size": ["v000001"],
+      "_Min_Stack_Size": ["v000002"],
+      "__FLASH_BEGIN": ["v000003"],
+      "__FLASH_SIZE": ["v000004"],
+      "__NONCACHEABLEBUFFER_BEGIN": ["v000005"],
+      "__NONCACHEABLEBUFFER_END": ["v000006"],
+      "__RAM_BEGIN": ["v000007"],
+      "__RAM_NONCACHEABLEBUFFER_SIZE": ["v000008"],
+      "__RAM_SIZE": ["v000009"],
+      "__bss_end__": ["v000010"],
+      "__bss_start__": ["v000011"],
+      "__exidx_end": ["v000012"],
+      "__exidx_start": ["v000013"],
+      "__init_array_end": ["v000014"],
+      "__init_array_start": ["v000015"],
+      "__preinit_array_end": ["v000016"],
+      "__preinit_array_start": ["v000017"],
+      "_ebss": ["v000018"],
+      "_edata": ["v000019"],
+      "_end": ["v000020"],
+      "_estack": ["v000021"],
+      "_etext": ["v000022"],
+      "_sbss": ["v000023"],
+      "_sdata": ["v000024"],
+      "_sidata": ["v000025"]
+    },
+    "null_name_ids": []
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "format": {
+    "name": "ldscript-json",
+    "major": 10,
+    "minor": 0
+  },
+  "output": {
+    "entry_symbol": "Reset_Handler"
+  },
+  "memory_regions": {
+    "items": [
+      {
+        "id": "r000001",
+        "name": "FLASH",
+        "origin_hex": "0x8000000",
+        "length_hex": "0x10000",
+        "attrs": "axr"
+      },
+      {
+        "id": "r000002",
+        "name": "RAM",
+        "origin_hex": "0x24000000",
+        "length_hex": "0x20000",
+        "attrs": "axw"
+      }
+    ],
+    "by_name": {
+      "FLASH": [
+        "r000001"
+      ],
+      "RAM": [
+        "r000002"
+      ]
+    },
+    "null_name_ids": []
+  },
+  "output_sections": {
+    "items": [
+      {
+        "id": "s000001",
+        "name": ".text",
+        "vma_region": "FLASH",
+        "lma_region": "FLASH",
+        "script_subsections": [
+          "*(.text)",
+          "*(.text*)"
+        ]
+      },
+      {
+        "id": "s000002",
+        "name": ".data",
+        "vma_region": "RAM",
+        "lma_region": "FLASH",
+        "script_subsections": [
+          "*(.data)",
+          "*(.data*)"
+        ]
+      }
+    ],
+    "by_name": {
+      ".text": [
+        "s000001"
+      ],
+      ".data": [
+        "s000002"
+      ]
+    },
+    "null_name_ids": []
+  },
+  "script_variables": {
+    "items": [
+      {
+        "id": "v000001",
+        "name": "__FLASH_BEGIN",
+        "value_hex": "0x8000000",
+        "section": "ABS"
+      }
+    ],
+    "by_name": {
+      "__FLASH_BEGIN": [
+        "v000001"
+      ]
+    },
+    "null_name_ids": []
+  }
+}
