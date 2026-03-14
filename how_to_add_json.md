@@ -782,6 +782,55 @@ All build instructions for the current patched linker revision live in:
 Use the script:
 - `build_02/_run_build_02.sh`
 
+Current script contents:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=/c/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32
+SRC=$ROOT/gnu-tools-for-stm32-13.3.rel1.20250523-0900
+OUT=$ROOT/build_02
+BLD=$OUT/_build-ld-st-13.3.rel1-mingw64-jsonpatch
+INS=$OUT/_install-ld-st-13.3.rel1-mingw64-jsonpatch
+DROP=$OUT/_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch
+JOBS=${JOBS:-$(nproc)}
+
+export PATH=/mingw64/bin:/usr/bin
+
+rm -rf "$BLD" "$INS" "$DROP"
+mkdir -p "$BLD" "$INS" "$DROP"
+
+cd "$BLD"
+export CFLAGS="-I$SRC/src/liblongpath-win32/include"
+export CPPFLAGS="-I$SRC/src/liblongpath-win32/include"
+
+"$SRC/src/binutils/configure" \
+  --prefix="$INS" \
+  --build=x86_64-w64-mingw32 \
+  --host=x86_64-w64-mingw32 \
+  --target=arm-none-eabi \
+  --disable-gdb \
+  --disable-sim \
+  --disable-nls \
+  --enable-plugins \
+  --with-sysroot="$INS/arm-none-eabi" \
+  --with-pkgversion="GNU Tools for STM32 13.3.rel1.20250523-0900" \
+  --disable-werror
+
+make -j"$JOBS" MAKEINFO=true all-ld
+make MAKEINFO=true install-ld
+
+cp "$INS/bin/arm-none-eabi-ld.exe" "$DROP/ld.exe"
+cp "$INS/bin/arm-none-eabi-ld.bfd.exe" "$DROP/ld.bfd.exe"
+cp "$INS/bin/arm-none-eabi-ld.exe" "$DROP/arm-none-eabi-ld.exe"
+cp "$INS/bin/arm-none-eabi-ld.bfd.exe" "$DROP/arm-none-eabi-ld.bfd.exe"
+cp /mingw64/bin/libwinpthread-1.dll "$DROP/libwinpthread-1.dll"
+cp /mingw64/bin/libzstd.dll "$DROP/libzstd.dll"
+
+"$DROP/ld.exe" --help | grep -q "dump-script-json"
+```
+
 From PowerShell:
 
 ```powershell
