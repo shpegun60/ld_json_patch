@@ -94,6 +94,12 @@ json_write_id (FILE *f, char prefix, unsigned int index)
   fprintf (f, "\"%c%06u\"", prefix, index);
 }
 
+static void
+json_write_prefixed_id (FILE *f, const char *prefix, unsigned int index)
+{
+  fprintf (f, "\"%s%06u\"", prefix, index);
+}
+
 static bool
 json_strings_equal (const char *a, const char *b)
 {
@@ -134,6 +140,127 @@ json_flag_letters (flagword flag, char *buf, size_t bufsize)
 #undef JSON_ADD_FLAG
 
   buf[i] = '\0';
+}
+
+static void
+json_section_flag_letters (flagword flag, char *buf, size_t bufsize)
+{
+  size_t i = 0;
+
+  if (bufsize == 0)
+    return;
+
+#define JSON_ADD_SECTION_FLAG(CH)					\
+  do								\
+    {								\
+      if (i + 1 < bufsize)					\
+	buf[i++] = (CH);					\
+    }								\
+  while (0)
+
+  if (flag & SEC_ALLOC)
+    JSON_ADD_SECTION_FLAG ('a');
+  if (flag & SEC_CODE)
+    JSON_ADD_SECTION_FLAG ('x');
+  else if (flag & SEC_READONLY)
+    JSON_ADD_SECTION_FLAG ('r');
+  else if (flag & SEC_ALLOC)
+    JSON_ADD_SECTION_FLAG ('w');
+
+#undef JSON_ADD_SECTION_FLAG
+
+  buf[i] = '\0';
+}
+
+static void
+json_write_flags_object (FILE *f, flagword flags, unsigned int indent)
+{
+  char letters[16];
+
+  json_section_flag_letters (flags, letters, sizeof (letters));
+
+  fputs ("{\n", f);
+  json_indent (f, indent + 1);
+  fputs ("\"letters\": ", f);
+  json_write_escaped_string (f, letters);
+  fputs (",\n", f);
+  json_indent (f, indent + 1);
+  fputs ("\"hex\": ", f);
+  json_write_hex_vma (f, (bfd_vma) flags);
+  fputc ('\n', f);
+  json_indent (f, indent);
+  fputc ('}', f);
+}
+
+static bool
+json_is_output_section_materialized (asection *sec)
+{
+  return (sec != NULL
+          && sec->owner == link_info.output_bfd
+          && (sec->flags & SEC_EXCLUDE) == 0);
+}
+
+static bool
+json_is_input_section_materialized (asection *sec)
+{
+  return (sec != NULL
+          && (sec->flags & SEC_EXCLUDE) == 0
+          && sec->output_section != NULL
+          && sec->output_section->owner == link_info.output_bfd
+          && (sec->output_section->flags & SEC_EXCLUDE) == 0);
+}
+
+static asection *
+json_get_final_output_section (asection *sec)
+{
+  if (json_is_output_section_materialized (sec))
+    return sec;
+  if (json_is_input_section_materialized (sec))
+    return sec->output_section;
+  return NULL;
+}
+
+static bool
+json_value_within_range (bfd_vma start, bfd_size_type size, bfd_vma value)
+{
+  bfd_vma span = TO_ADDR (size);
+
+  if (value < start)
+    return false;
+  if (span == 0)
+    return value == start;
+  return (value - start) <= span;
+}
+
+static bool
+json_output_section_contains_value (asection *sec, bfd_vma value)
+{
+  if (sec == NULL)
+    return false;
+
+  if (json_value_within_range (sec->vma, sec->size, value))
+    return true;
+  if (sec->lma != sec->vma
+      && json_value_within_range (sec->lma, sec->size, value))
+    return true;
+
+  return false;
+}
+
+static asection *
+json_find_output_section_for_value (bfd_vma value)
+{
+  lang_output_section_statement_type *os;
+
+  for (os = (void *) lang_os_list.head; os != NULL; os = os->next)
+    {
+      asection *outsec = os->bfd_section;
+
+      if (outsec != NULL && json_output_section_contains_value (outsec, value))
+        return outsec;
+    }
+
+  return NULL;
 }
 
 static const char *
@@ -1018,6 +1145,407 @@ json_dump_output_info (FILE *f, unsigned int indent)
   fputc ('}', f);
 }
 
+struct json_input_section_entry
+{
+  asection *section;
+  bool discarded;
+  const char *discard_reason;
+};
+
+struct json_input_section_vec
+{
+  struct json_input_section_entry *items;
+  size_t count;
+  size_t cap;
+};
+
+static void
+json_input_section_vec_push (struct json_input_section_vec *vec,
+                             asection *section,
+                             bool discarded,
+                             const char *discard_reason)
+{
+  if (vec->count == vec->cap)
+    {
+      size_t new_cap = vec->cap == 0 ? 128 : vec->cap * 2;
+      vec->items = (struct json_input_section_entry *)
+        xrealloc (vec->items, new_cap * sizeof (*vec->items));
+      vec->cap = new_cap;
+    }
+
+  vec->items[vec->count].section = section;
+  vec->items[vec->count].discarded = discarded;
+  vec->items[vec->count].discard_reason = discard_reason;
+  vec->count++;
+}
+
+static const char *
+json_input_section_discard_reason (asection *section)
+{
+  if (section == NULL)
+    return "discarded";
+
+  if ((section->flags & SEC_EXCLUDE) != 0)
+    {
+      if ((link_info.strip == strip_debugger || link_info.strip == strip_all)
+          && (section->flags & SEC_DEBUGGING) != 0)
+        return "strip_debug";
+      if (config.no_section_header && (section->flags & SEC_ALLOC) == 0)
+        return "no_section_header";
+      return "gc_sections";
+    }
+
+  if (section->output_section != NULL && bfd_is_abs_section (section->output_section))
+    return "discard_script";
+
+  return "discarded";
+}
+
+static bool
+json_input_section_is_discarded (asection *section)
+{
+  if (section == NULL)
+    return false;
+
+  return (!json_is_input_section_materialized (section)
+          && (section->flags & (SEC_LINKER_CREATED | SEC_KEEP)) == 0);
+}
+
+static void
+json_collect_input_sections (struct json_input_section_vec *vec)
+{
+  vec->items = NULL;
+  vec->count = 0;
+  vec->cap = 0;
+
+  LANG_FOR_EACH_INPUT_STATEMENT (file)
+    {
+      asection *sec;
+
+      if (file == NULL
+          || file->the_bfd == NULL
+          || (file->the_bfd->flags & (BFD_LINKER_CREATED | DYNAMIC)) != 0
+          || file->flags.just_syms)
+        continue;
+
+      for (sec = file->the_bfd->sections; sec != NULL; sec = sec->next)
+        {
+          bool discarded;
+
+          if ((sec->flags & SEC_LINKER_CREATED) != 0)
+            continue;
+
+          discarded = json_input_section_is_discarded (sec);
+          json_input_section_vec_push (vec, sec, discarded,
+                                       discarded
+                                       ? json_input_section_discard_reason (sec)
+                                       : NULL);
+        }
+    }
+}
+
+static void
+json_free_input_sections (struct json_input_section_vec *vec)
+{
+  free (vec->items);
+  vec->items = NULL;
+  vec->count = 0;
+  vec->cap = 0;
+}
+
+static bool
+json_find_output_section_id (asection *sec, char *buf, size_t bufsize)
+{
+  lang_output_section_statement_type *os;
+  unsigned int idx = 0;
+
+  for (os = (void *) lang_os_list.head; os != NULL; os = os->next)
+    {
+      idx++;
+      if (os->bfd_section == sec)
+        {
+          if (buf != NULL && bufsize != 0)
+            sprintf (buf, "s%06u", idx);
+          return true;
+        }
+    }
+
+  return false;
+}
+
+static asection *
+json_find_unique_output_section_by_name (const char *name)
+{
+  lang_output_section_statement_type *os;
+  asection *match = NULL;
+
+  if (name == NULL)
+    return NULL;
+
+  for (os = (void *) lang_os_list.head; os != NULL; os = os->next)
+    {
+      if (os->bfd_section == NULL || os->name == NULL)
+        continue;
+      if (strcmp (os->name, name) != 0)
+        continue;
+
+      if (match != NULL)
+        return NULL;
+
+      match = os->bfd_section;
+    }
+
+  return match;
+}
+
+static bool
+json_find_input_section_id (const struct json_input_section_vec *vec,
+                            asection *sec,
+                            char *buf,
+                            size_t bufsize)
+{
+  size_t i;
+
+  if (vec == NULL || sec == NULL)
+    return false;
+
+  for (i = 0; i < vec->count; i++)
+    if (vec->items[i].section == sec)
+      {
+        if (buf != NULL && bufsize != 0)
+          sprintf (buf, "is%06u", (unsigned int) (i + 1));
+        return true;
+      }
+
+  return false;
+}
+
+static bool
+json_input_section_name_seen_before (const struct json_input_section_vec *vec,
+                                     size_t stop_index,
+                                     const char *name)
+{
+  size_t i;
+
+  for (i = 0; i < stop_index; i++)
+    if (json_strings_equal (vec->items[i].section != NULL
+                            ? vec->items[i].section->name : NULL,
+                            name))
+      return true;
+  return false;
+}
+
+static void
+json_dump_input_sections (FILE *f,
+                          unsigned int indent,
+                          const struct json_input_section_vec *vec)
+{
+  size_t i;
+  bool first_item = true;
+  bool first_name = true;
+  bool first_null = true;
+
+  fputs ("{\n", f);
+
+  json_indent (f, indent + 1);
+  fputs ("\"items\": [", f);
+  for (i = 0; i < vec->count; i++)
+    {
+      asection *sec = vec->items[i].section;
+      asection *outsec = json_get_final_output_section (sec);
+      asection *outsec_for_id = outsec;
+
+      if (outsec_for_id == NULL
+          && sec != NULL
+          && !vec->items[i].discarded)
+        outsec_for_id = json_find_unique_output_section_by_name (sec->name);
+
+      if (first_item)
+        {
+          fputc ('\n', f);
+          first_item = false;
+        }
+      else
+        fputs (",\n", f);
+
+      json_indent (f, indent + 2);
+      fputs ("{\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"id\": ", f);
+      json_write_prefixed_id (f, "is", (unsigned int) (i + 1));
+      fputs (",\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"name\": ", f);
+      json_write_string_or_null (f, sec != NULL ? sec->name : NULL);
+      fputs (",\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"discarded\": ", f);
+      fputs (vec->items[i].discarded ? "true,\n" : "false,\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"output_section_id\": ", f);
+      if (outsec_for_id != NULL)
+        {
+          char idbuf[16];
+          if (json_find_output_section_id (outsec_for_id, idbuf, sizeof (idbuf)))
+            json_write_escaped_string (f, idbuf);
+          else
+            fputs ("null", f);
+        }
+      else
+        fputs ("null", f);
+      fputs (",\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"owner_file\": ", f);
+      json_write_string_or_null (f,
+                                 sec != NULL && sec->owner != NULL
+                                 ? bfd_get_filename (sec->owner) : NULL);
+      fputs (",\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"value_hex\": ", f);
+      if (outsec != NULL)
+        json_write_hex_vma (f, outsec->vma + sec->output_offset);
+      else
+        fputs ("null", f);
+      fputs (",\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"size_hex\": ", f);
+      if (sec != NULL)
+        json_write_hex_vma (f, TO_ADDR (sec->size));
+      else
+        fputs ("null", f);
+      fputs (",\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"output_offset_hex\": ", f);
+      if (outsec != NULL)
+        json_write_hex_vma (f, sec->output_offset);
+      else
+        fputs ("null", f);
+      fputs (",\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"flags\": ", f);
+      if (sec != NULL)
+        json_write_flags_object (f, sec->flags, indent + 3);
+      else
+        fputs ("null", f);
+      fputc ('\n', f);
+      json_indent (f, indent + 2);
+      fputc ('}', f);
+    }
+  if (!first_item)
+    {
+      fputc ('\n', f);
+      json_indent (f, indent + 1);
+    }
+  fputs ("],\n", f);
+
+  json_indent (f, indent + 1);
+  fputs ("\"by_name\": ", f);
+  for (i = 0; i < vec->count; i++)
+    {
+      size_t j;
+      bool first_id = true;
+      const char *name = vec->items[i].section != NULL
+                         ? vec->items[i].section->name : NULL;
+
+      if (name == NULL || json_input_section_name_seen_before (vec, i, name))
+        continue;
+
+      if (first_name)
+        {
+          fputs ("{\n", f);
+          first_name = false;
+        }
+      else
+        fputs (",\n", f);
+
+      json_indent (f, indent + 2);
+      json_write_escaped_string (f, name);
+      fputs (": [", f);
+      for (j = 0; j < vec->count; j++)
+        {
+          const char *other_name = vec->items[j].section != NULL
+                                   ? vec->items[j].section->name : NULL;
+          if (!json_strings_equal (name, other_name))
+            continue;
+          if (!first_id)
+            fputs (", ", f);
+          first_id = false;
+          json_write_prefixed_id (f, "is", (unsigned int) (j + 1));
+        }
+      fputc (']', f);
+    }
+  if (first_name)
+    fputs ("{},\n", f);
+  else
+    {
+      fputc ('\n', f);
+      json_indent (f, indent + 1);
+      fputs ("},\n", f);
+    }
+
+  json_indent (f, indent + 1);
+  fputs ("\"null_name_ids\": [", f);
+  for (i = 0; i < vec->count; i++)
+    {
+      const char *name = vec->items[i].section != NULL
+                         ? vec->items[i].section->name : NULL;
+      if (name != NULL)
+        continue;
+      if (!first_null)
+        fputs (", ", f);
+      first_null = false;
+      json_write_prefixed_id (f, "is", (unsigned int) (i + 1));
+    }
+  fputs ("]\n", f);
+
+  json_indent (f, indent);
+  fputc ('}', f);
+}
+
+static void
+json_dump_discarded_input_sections (FILE *f,
+                                    unsigned int indent,
+                                    const struct json_input_section_vec *vec)
+{
+  size_t i;
+  bool first_item = true;
+
+  fputc ('[', f);
+  for (i = 0; i < vec->count; i++)
+    if (vec->items[i].discarded)
+      {
+        if (first_item)
+          {
+            fputc ('\n', f);
+            first_item = false;
+          }
+        else
+          fputs (",\n", f);
+
+        json_indent (f, indent + 1);
+        fputs ("{\n", f);
+        json_indent (f, indent + 2);
+        fputs ("\"input_section_id\": ", f);
+        json_write_prefixed_id (f, "is", (unsigned int) (i + 1));
+        fputs (",\n", f);
+        json_indent (f, indent + 2);
+        fputs ("\"discard_reason\": ", f);
+        json_write_escaped_string (f, vec->items[i].discard_reason != NULL
+                                      ? vec->items[i].discard_reason
+                                      : "discarded");
+        fputc ('\n', f);
+        json_indent (f, indent + 1);
+        fputc ('}', f);
+      }
+
+  if (!first_item)
+    {
+      fputc ('\n', f);
+      json_indent (f, indent);
+    }
+  fputc (']', f);
+}
+
 static bool
 json_region_name_seen_before (lang_memory_region_type *stop, const char *name)
 {
@@ -1044,10 +1572,12 @@ json_dump_core_regions (FILE *f, unsigned int indent)
   fputs ("\"items\": [", f);
   for (m = lang_memory_region_list; m != NULL; m = m->next)
     {
-      char attrs_flags[8];
+      char attrs_flags[16];
+      char not_attrs_flags[16];
 
       idx++;
       json_flag_letters (m->flags, attrs_flags, sizeof (attrs_flags));
+      json_flag_letters (m->not_flags, not_attrs_flags, sizeof (not_attrs_flags));
 
       if (first_item)
 	{
@@ -1077,7 +1607,25 @@ json_dump_core_regions (FILE *f, unsigned int indent)
       fputs (",\n", f);
       json_indent (f, indent + 3);
       fputs ("\"attrs\": ", f);
+      fputs ("{\n", f);
+      json_indent (f, indent + 4);
+      fputs ("\"required\": ", f);
       json_write_escaped_string (f, attrs_flags);
+      fputs (",\n", f);
+      json_indent (f, indent + 4);
+      fputs ("\"forbidden\": ", f);
+      json_write_escaped_string (f, not_attrs_flags);
+      fputs (",\n", f);
+      json_indent (f, indent + 4);
+      fputs ("\"flags_hex\": ", f);
+      json_write_hex_vma (f, (bfd_vma) m->flags);
+      fputs (",\n", f);
+      json_indent (f, indent + 4);
+      fputs ("\"not_flags_hex\": ", f);
+      json_write_hex_vma (f, (bfd_vma) m->not_flags);
+      fputc ('\n', f);
+      json_indent (f, indent + 3);
+      fputc ('}', f);
       fputc ('\n', f);
       json_indent (f, indent + 2);
       fputc ('}', f);
@@ -1184,6 +1732,8 @@ json_dump_core_sections (FILE *f, unsigned int indent)
   fputs ("\"items\": [", f);
   for (os = (void *) lang_os_list.head; os != NULL; os = os->next)
     {
+      asection *outsec = os->bfd_section;
+
       idx++;
 
       if (first_item)
@@ -1216,6 +1766,34 @@ json_dump_core_sections (FILE *f, unsigned int indent)
 				 os->lma_region != NULL
 				 ? os->lma_region->name_list.name : NULL);
       fputs (",\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"vma_hex\": ", f);
+      if (outsec != NULL)
+        json_write_hex_vma (f, outsec->vma);
+      else
+        fputs ("null", f);
+      fputs (",\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"lma_hex\": ", f);
+      if (outsec != NULL)
+        json_write_hex_vma (f, outsec->lma);
+      else
+        fputs ("null", f);
+      fputs (",\n", f);
+      json_indent (f, indent + 3);
+      fputs ("\"size_hex\": ", f);
+      if (outsec != NULL)
+        json_write_hex_vma (f, TO_ADDR (outsec->size));
+      else
+        fputs ("null", f);
+      fputs (",\n", f);
+      if (outsec != NULL)
+        {
+          json_indent (f, indent + 3);
+          fputs ("\"flags\": ", f);
+          json_write_flags_object (f, outsec->flags, indent + 3);
+          fputs (",\n", f);
+        }
       json_indent (f, indent + 3);
       fputs ("\"script_subsections\": ", f);
       json_dump_output_section_subsections (f, os, indent + 3);
@@ -1296,8 +1874,12 @@ json_dump_core_sections (FILE *f, unsigned int indent)
   fputc ('}', f);
 }
 
-static void json_dump_script_variables (FILE *f, unsigned int indent);
-static void json_dump_core_symbols (FILE *f, unsigned int indent);
+static void json_dump_symbols (FILE *f,
+                               unsigned int indent,
+                               const struct json_input_section_vec *input_sections);
+static void json_dump_core_symbols (FILE *f,
+                                    unsigned int indent,
+                                    const struct json_input_section_vec *input_sections);
 
 static void
 lang_dump_script_json (void)
@@ -1306,6 +1888,7 @@ lang_dump_script_json (void)
   char *tmp_path = NULL;
   bool close_file = false;
   bool needs_install = false;
+  struct json_input_section_vec input_sections;
 
   if (command_line.dump_script_json == NULL)
     return;
@@ -1332,6 +1915,8 @@ lang_dump_script_json (void)
       close_file = true;
       needs_install = true;
     }
+
+  json_collect_input_sections (&input_sections);
 
   fputs ("{\n", f);
   json_indent (f, 1);
@@ -1364,8 +1949,18 @@ lang_dump_script_json (void)
   fputs (",\n", f);
 
   json_indent (f, 1);
-  fputs ("\"script_variables\": ", f);
-  json_dump_script_variables (f, 1);
+  fputs ("\"input_sections\": ", f);
+  json_dump_input_sections (f, 1, &input_sections);
+  fputs (",\n", f);
+
+  json_indent (f, 1);
+  fputs ("\"discarded_input_sections\": ", f);
+  json_dump_discarded_input_sections (f, 1, &input_sections);
+  fputs (",\n", f);
+
+  json_indent (f, 1);
+  fputs ("\"symbols\": ", f);
+  json_dump_symbols (f, 1, &input_sections);
   fputs ("\n", f);
   fputs ("}\n", f);
 
@@ -1429,10 +2024,11 @@ lang_dump_script_json (void)
 	       command_line.dump_script_json);
     }
 
+  json_free_input_sections (&input_sections);
   free (tmp_path);
 }
 
-/* ==== script_variables collection helpers ==== */
+/* ==== symbols collection helpers ==== */
 struct json_symbol_vec
 {
   struct bfd_link_hash_entry **items;
@@ -1443,7 +2039,10 @@ struct json_symbol_vec
 static bool
 json_symbol_is_dumpable (const struct bfd_link_hash_entry *h)
 {
-  return LDJSON_SYM_IS_DUMPABLE (h);
+  return (h != NULL
+          && h->root.string != NULL
+          && h->root.string[0] != '\0'
+          && LDJSON_SYM_IS_DUMPABLE (h));
 }
 
 static bool
@@ -1493,38 +2092,138 @@ json_collect_sorted_symbols (struct json_symbol_vec *vec)
 }
 
 static void
+json_symbol_state_name (FILE *f, const struct bfd_link_hash_entry *h)
+{
+  const char *state = "defined";
+
+  switch (h->type)
+    {
+    case bfd_link_hash_defined:
+    case bfd_link_hash_defweak:
+      state = "defined";
+      break;
+    case bfd_link_hash_undefined:
+    case bfd_link_hash_undefweak:
+      state = "undefined";
+      break;
+    case bfd_link_hash_common:
+      state = "common";
+      break;
+    case bfd_link_hash_indirect:
+      state = "alias";
+      break;
+    case bfd_link_hash_warning:
+      state = "warning";
+      break;
+    default:
+      state = "undefined";
+      break;
+    }
+
+  json_write_escaped_string (f, state);
+}
+
+static asection *
+json_symbol_section (struct bfd_link_hash_entry *h)
+{
+  switch (h->type)
+    {
+    case bfd_link_hash_defined:
+    case bfd_link_hash_defweak:
+      return h->u.def.section;
+    case bfd_link_hash_common:
+      return h->u.c.p != NULL ? h->u.c.p->section : NULL;
+    default:
+      return NULL;
+    }
+}
+
+static bool
+json_symbol_resolved_value (struct bfd_link_hash_entry *h,
+                            asection *sec,
+                            bfd_vma *value_out)
+{
+  asection *outsec;
+
+  if (value_out == NULL)
+    return false;
+
+  if ((h->type != bfd_link_hash_defined && h->type != bfd_link_hash_defweak)
+      || sec == NULL)
+    return false;
+
+  if (bfd_is_abs_section (sec))
+    {
+      *value_out = LDJSON_SYM_VALUE (h);
+      return true;
+    }
+
+  outsec = json_get_final_output_section (sec);
+  if (outsec != NULL)
+    {
+      bfd_vma offset = (sec == outsec) ? 0 : sec->output_offset;
+      *value_out = LDJSON_SYM_VALUE (h) + outsec->vma + offset;
+      return true;
+    }
+
+  return false;
+}
+
+static const char *
+json_symbol_section_name (struct bfd_link_hash_entry *h, asection *sec)
+{
+  asection *outsec;
+
+  if (sec == NULL)
+    return NULL;
+  if (bfd_is_abs_section (sec))
+    return "ABS";
+
+  outsec = json_get_final_output_section (sec);
+  if (outsec != NULL && outsec->name != NULL)
+    return outsec->name;
+
+  if (h->type == bfd_link_hash_common && sec->name == NULL)
+    return "COMMON";
+
+  return sec->name;
+}
+
+static void
 json_dump_one_symbol (FILE *f,
 		      struct bfd_link_hash_entry *h,
 		      unsigned int indent,
-		      const char *stable_id)
+		      const char *stable_id,
+                      const struct json_input_section_vec *input_sections)
 {
-  asection *sec = LDJSON_SYM_SECTION (h);
-  bool is_abs = (sec != NULL && bfd_is_abs_section (sec));
-  bool in_output = LDJSON_SEC_IS_OUTPUT_MAPPED (sec);
+  asection *sec = json_symbol_section (h);
+  asection *outsec = json_get_final_output_section (sec);
   bool has_value = false;
   bfd_vma resolved_value = 0;
-  const char *section_name = NULL;
+  bool force_abs_section = false;
+  const char *section_name;
 
-  if (sec != NULL)
+  has_value = json_symbol_resolved_value (h, sec, &resolved_value);
+  if (h->ldscript_def && has_value && outsec != NULL
+      && !json_output_section_contains_value (outsec, resolved_value))
     {
-      if (is_abs)
-	{
-	  has_value = true;
-	  resolved_value = LDJSON_SYM_VALUE (h);
-	  section_name = "ABS";
-	}
-      else if (in_output)
-	{
-	  init_opb (sec);
-	  has_value = true;
-	  resolved_value = (LDJSON_SYM_VALUE (h)
-			    + bfd_section_vma (sec->output_section)
-			    + sec->output_offset);
-	  section_name = sec->output_section->name;
-	}
-      else if (sec->name != NULL)
-	section_name = sec->name;
+      asection *better_outsec = json_find_output_section_for_value (resolved_value);
+
+      if (better_outsec != NULL)
+        outsec = better_outsec;
+      else
+        {
+          outsec = NULL;
+          force_abs_section = true;
+        }
     }
+
+  if (force_abs_section)
+    section_name = "ABS";
+  else if (outsec != NULL && outsec->name != NULL)
+    section_name = outsec->name;
+  else
+    section_name = json_symbol_section_name (h, sec);
 
   fputs ("{\n", f);
   if (stable_id != NULL)
@@ -1541,6 +2240,11 @@ json_dump_one_symbol (FILE *f,
   fputs (",\n", f);
 
   json_indent (f, indent + 1);
+  fputs ("\"state\": ", f);
+  json_symbol_state_name (f, h);
+  fputs (",\n", f);
+
+  json_indent (f, indent + 1);
   fputs ("\"value_hex\": ", f);
   if (has_value)
     json_write_hex_vma (f, resolved_value);
@@ -1549,8 +2253,47 @@ json_dump_one_symbol (FILE *f,
   fputs (",\n", f);
 
   json_indent (f, indent + 1);
+  fputs ("\"size_hex\": ", f);
+  if (h->type == bfd_link_hash_common)
+    json_write_hex_vma (f, TO_ADDR (h->u.c.size));
+  else
+    fputs ("null", f);
+  fputs (",\n", f);
+
+  json_indent (f, indent + 1);
   fputs ("\"section\": ", f);
   json_write_string_or_null (f, section_name);
+  fputs (",\n", f);
+
+  json_indent (f, indent + 1);
+  fputs ("\"output_section_id\": ", f);
+  if (outsec != NULL)
+    {
+      char idbuf[16];
+      if (json_find_output_section_id (outsec, idbuf, sizeof (idbuf)))
+        json_write_escaped_string (f, idbuf);
+      else
+        fputs ("null", f);
+    }
+  else
+    fputs ("null", f);
+  fputs (",\n", f);
+
+  json_indent (f, indent + 1);
+  fputs ("\"input_section_id\": ", f);
+  if (json_find_input_section_id (input_sections, sec, NULL, 0))
+    {
+      char idbuf[16];
+      json_find_input_section_id (input_sections, sec, idbuf, sizeof (idbuf));
+      json_write_escaped_string (f, idbuf);
+    }
+  else
+    fputs ("null", f);
+  fputs (",\n", f);
+
+  json_indent (f, indent + 1);
+  fputs ("\"script_defined\": ", f);
+  fputs (h->ldscript_def ? "true" : "false", f);
   fputc ('\n', f);
 
   json_indent (f, indent);
@@ -1558,13 +2301,17 @@ json_dump_one_symbol (FILE *f,
 }
 
 static void
-json_dump_script_variables (FILE *f, unsigned int indent)
+json_dump_symbols (FILE *f,
+                   unsigned int indent,
+                   const struct json_input_section_vec *input_sections)
 {
-  json_dump_core_symbols (f, indent);
+  json_dump_core_symbols (f, indent, input_sections);
 }
 
 static void
-json_dump_core_symbols (FILE *f, unsigned int indent)
+json_dump_core_symbols (FILE *f,
+                        unsigned int indent,
+                        const struct json_input_section_vec *input_sections)
 {
   struct json_symbol_vec vec;
   size_t i;
@@ -1590,7 +2337,7 @@ json_dump_core_symbols (FILE *f, unsigned int indent)
 
       sprintf (idbuf, "v%06u", (unsigned int) (i + 1));
       json_indent (f, indent + 2);
-      json_dump_one_symbol (f, vec.items[i], indent + 2, idbuf);
+      json_dump_one_symbol (f, vec.items[i], indent + 2, idbuf, input_sections);
     }
   if (!first_item)
     {
@@ -1652,6 +2399,7 @@ json_dump_core_symbols (FILE *f, unsigned int indent)
  * 1) Wire option via ldjson_options.def in ld.h/ldlex.h/lexsup.c.
  * 2) Call lang_dump_script_json() at end of lang_process() after lang_end().
  * 3) Keep ldscript_json_impl.inc included in file scope inside ldlang.c.
- * 4) Top-level collections are indexed objects: items/by_name/null_name_ids.
- * 5) by_name maps are duplicate-safe (name -> [id...]).
+ * 4) Indexed top-level collections: memory_regions/output_sections/input_sections/symbols.
+ * 5) discarded_input_sections is a plain top-level list of discard records.
+ * 6) by_name maps are duplicate-safe (name -> [id...]).
  */

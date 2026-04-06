@@ -1,10 +1,11 @@
-# How To Add --dump-script-json
+﻿# How To Add --dump-script-json
 
-This document is the end-to-end reference for:
-- wiring `--dump-script-json` into ST GNU ld in this workspace;
-- understanding the final JSON contract;
-- building the patched linker;
-- verifying the new command on a real STM32 project.
+This document is the practical porting guide for the current `json_patch` package.
+Use it when you want to:
+- copy the patch into the ST linker tree;
+- apply the small glue edits in the existing ld files;
+- rebuild the patched linker;
+- verify the new command on a real STM32 project.
 
 Workspace root:
 - `C:\Users\admin\Documents\my_workspace\gnu\gnu-tools-for-stm32`
@@ -18,7 +19,7 @@ Reference patch package:
 Build/output folder for this revision:
 - `C:\Users\admin\Documents\my_workspace\gnu\gnu-tools-for-stm32\build_02`
 
-## READ THIS FIRST: hooks vs real files
+## Read This First: Real Files vs Hook Fragments
 
 There are two different kinds of files in `json_patch`, and they do different jobs.
 
@@ -52,35 +53,27 @@ Their only purpose is:
 - copy the tiny glue block;
 - paste it into the matching real source file.
 
-If you are confused, use this rule:
+If you are unsure what to do, use this rule:
 - the `hooks/*.fragment` files tell you what to paste;
 - the `ldjson_*.def/.h` and `ldscript_json_impl.inc` files are the real code.
 
-## FASTEST PATH
+## Recommended Workflow
 
-If the source tree is already patched and you only want to build:
-1. Run `build_02/_run_build_02.sh`.
-2. Check that `build_02/_cubeide-arm-linker-.../ld.exe --help` shows `dump-script-json`.
-3. Run `build_02/_smoke_test_h7s_fiber_test.ps1`.
+If the source tree is already patched and you only want a rebuild, jump to:
+- `Step 4. Build`
 
-If the source tree is not patched yet and you want the full process:
+If you are porting the patch into a fresh tree, do the steps in this exact order:
 1. Copy the three real feature files into `src/binutils/ld`.
-2. Edit the five glue files in `src/binutils/ld` exactly as shown below.
-3. Run the build command from section `7`.
-4. Run the verification command from section `8`.
-5. Run the real project smoke test from section `9`.
+2. Paste the five glue fragments into the matching ld source files.
+3. Run the patch check.
+4. Run the build.
+5. Verify that `ld.exe --help` shows `dump-script-json`.
+6. Run the real project smoke test.
+7. If the smoke test exits without error and prints the summary object, the patch/build worked.
 
-If you want the shortest possible mental model:
-1. Copy real code files.
-2. Paste tiny glue snippets into five existing ld files.
-3. Build.
-4. Check `--help`.
-5. Generate JSON.
-
-## COPY THESE FILES
+## Step 1. Copy The Real Feature Files
 
 Copy exactly these files:
-
 - `C:\Users\admin\Documents\my_workspace\gnu\gnu-tools-for-stm32\json_patch\ldjson_options.def`
   -> `C:\Users\admin\Documents\my_workspace\gnu\gnu-tools-for-stm32\gnu-tools-for-stm32-13.3.rel1.20250523-0900\src\binutils\ld\ldjson_options.def`
 - `C:\Users\admin\Documents\my_workspace\gnu\gnu-tools-for-stm32\json_patch\ldjson_compat.h`
@@ -97,9 +90,7 @@ Do not copy these as code files:
 
 These `hooks` files are only copy-paste helpers.
 
-## POWERSHELL COPY COMMANDS
-
-If you do not want to copy files by hand, run exactly these commands in PowerShell:
+If you want to do the copy from PowerShell, run exactly this:
 
 ```powershell
 Copy-Item -Force `
@@ -118,132 +109,151 @@ Copy-Item -Force `
 What these commands do:
 - overwrite the destination files with the current reference files from `json_patch`;
 - do not touch `ld.h`, `ldlex.h`, `lexsup.c`, `ldlang.c`, or `Makefile.am`;
-- do not use `hooks/*.fragment` automatically, because those still must be pasted by hand into the five glue files.
+- do not apply `hooks/*.fragment` automatically, because those still must be pasted by hand into the five glue files.
 
-## PATCH CHECK BEFORE BUILD
+## Step 2. Apply The Glue Fragments
 
-Before you start the build, you can run one automatic check that verifies:
+Edit only these five files in `src/binutils/ld`:
+- `ld.h`
+- `ldlex.h`
+- `lexsup.c`
+- `ldlang.c`
+- `Makefile.am`
+
+Use these helper fragments:
+- `json_patch/hooks/ld.h.fragment`
+- `json_patch/hooks/ldlex.h.fragment`
+- `json_patch/hooks/lexsup.c.fragment`
+- `json_patch/hooks/ldlang.c.fragment`
+- `json_patch/hooks/Makefile.am.fragment`
+
+Short checklist:
+1. Open `json_patch/hooks/ld.h.fragment` and paste it into `src/binutils/ld/ld.h`.
+2. Open `json_patch/hooks/ldlex.h.fragment` and paste it into `src/binutils/ld/ldlex.h`.
+3. Open `json_patch/hooks/lexsup.c.fragment` and paste both snippets into `src/binutils/ld/lexsup.c`.
+4. Open `json_patch/hooks/ldlang.c.fragment` and paste both snippets into `src/binutils/ld/ldlang.c`.
+5. Open `json_patch/hooks/Makefile.am.fragment` and add those two lines into `src/binutils/ld/Makefile.am`.
+6. Save all five files.
+
+If you want the exact anchors and the exact before/after blocks, jump to:
+- `Reference: Exact Integration Points In ST ld`
+
+## Step 3. Run The Patch Check
+
+Before you build, run the automatic patch check.
+It verifies:
 - the three real files were copied into `src/binutils/ld`;
 - all five glue insertion points are present in the expected files.
 
-Run this:
+Run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "C:/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/build_02/_check_patch_applied.ps1"
 ```
 
-If the patch is correct, the script prints a success object like this:
+Expected success output:
 
 ```text
 ok      : True
 message : all required files and glue snippets are present
 ```
 
-If the patch is incomplete, the script exits with an error and tells you which
-required file or glue block is missing.
+If this check fails, do not start the build yet.
+Fix the missing copied file or the missing glue snippet first.
 
-## ONE SCREEN CHECKLIST
+## Step 4. Build
 
-1. Open `gnu-tools-for-stm32-13.3.rel1.20250523-0900\src\binutils\ld`.
-2. Copy `ldjson_options.def`, `ldjson_compat.h`, `ldscript_json_impl.inc` from `json_patch` into that folder.
-3. Open `json_patch\hooks\ld.h.fragment` and paste that snippet into `src\binutils\ld\ld.h`.
-4. Open `json_patch\hooks\ldlex.h.fragment` and paste that snippet into `src\binutils\ld\ldlex.h`.
-5. Open `json_patch\hooks\lexsup.c.fragment` and paste both snippets into `src\binutils\ld\lexsup.c`.
-6. Open `json_patch\hooks\ldlang.c.fragment` and paste both snippets into `src\binutils\ld\ldlang.c`.
-7. Open `json_patch\hooks\Makefile.am.fragment` and add those two lines into `src\binutils\ld\Makefile.am`.
-8. Save all files.
-9. Run `powershell -ExecutionPolicy Bypass -File "C:/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/build_02/_check_patch_applied.ps1"`.
-10. If the patch check says `ok : True`, run `C:\msys64\msys2_shell.cmd -defterm -no-start -mingw64 -here -c "/usr/bin/bash /c/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/build_02/_run_build_02.sh"`.
-11. Run `& "C:/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/build_02/_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch/ld.exe" --help | Select-String "dump-script-json"`.
-12. Run `powershell -ExecutionPolicy Bypass -File "C:/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/build_02/_smoke_test_h7s_fiber_test.ps1"`.
-13. If step 11 shows `dump-script-json` and step 12 prints `indexed contract is valid`, the patch/build worked.
+Use the build script:
+- `build_02/_run_build_02.sh`
 
-## BUILD ONLY
-
-If patching is already done and you only want to build the linker, do exactly this:
-
-1. Run:
+From PowerShell run:
 
 ```powershell
 C:\msys64\msys2_shell.cmd -defterm -no-start -mingw64 -here -c "/usr/bin/bash /c/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/build_02/_run_build_02.sh"
 ```
 
-2. Wait until the command finishes without an error.
-3. Check this file exists:
-   - `C:\Users\admin\Documents\my_workspace\gnu\gnu-tools-for-stm32\build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\ld.exe`
-4. Run:
+What this build does:
+- creates a clean build directory;
+- configures `src/binutils` for a MINGW64 host;
+- builds `all-ld`;
+- installs `install-ld`;
+- packages a CubeIDE-style drop-in folder inside `build_02`;
+- checks that `ld --help` exposes `dump-script-json`.
+
+After a successful build you should have at least:
+- `build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\ld.exe`
+- `build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\ld.bfd.exe`
+- `build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\arm-none-eabi-ld.exe`
+- `build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\arm-none-eabi-ld.bfd.exe`
+
+## Step 5. Verify The New Command Exists
+
+Run:
 
 ```powershell
 & "C:/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/build_02/_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch/ld.exe" --help | Select-String "dump-script-json"
 ```
 
-5. If you see `dump-script-json`, the build worked.
-
-If you are not sure whether the source tree is patched correctly, run this first:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "C:/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/build_02/_check_patch_applied.ps1"
-```
-
-## ONE SCREEN BUILD CHECKLIST
-
-1. Make sure the source tree is already patched.
-2. Run `build_02/_run_build_02.sh` through the MSYS2 command shown below.
-3. Wait until the command exits normally.
-4. Open `build_02`.
-5. Confirm these folders now exist:
-   - `_build-ld-st-13.3.rel1-mingw64-jsonpatch`
-   - `_install-ld-st-13.3.rel1-mingw64-jsonpatch`
-   - `_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch`
-6. Open `_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch`.
-7. Confirm `ld.exe` exists.
-8. Confirm `ld.bfd.exe` exists.
-9. Run `ld.exe --help | Select-String "dump-script-json"`.
-10. If you see the option text, the linker build is good.
-11. Run the smoke test script.
-12. If the smoke test prints `indexed contract is valid`, the end-to-end build is good.
-
-## EXPECTED SUCCESS OUTPUT
-
-After a successful build, you should have these files:
-- `build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\ld.exe`
-- `build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\ld.bfd.exe`
-- `build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\arm-none-eabi-ld.exe`
-- `build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\arm-none-eabi-ld.bfd.exe`
-- `build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\libwinpthread-1.dll`
-- `build_02\_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch\libzstd.dll`
-
-After a successful help check, you should see a line like this:
+Expected output contains a line like:
 
 ```text
 --dump-script-json FILE     Write linker script data as indexed JSON
 ```
 
-After a successful smoke test, you should see output that includes:
+If this line is missing:
+- you are checking the wrong `ld.exe`;
+- the patched tree was not rebuilt yet;
+- or one of the `ldlex.h` / `lexsup.c` glue snippets was not inserted correctly.
 
-```text
-"ok": true
-"message": "indexed contract is valid"
+## Step 6. Run The Real STM32 Smoke Test
+
+Project used for the real linker test:
+- `C:\Users\admin\Documents\my_workspace\stm32\experiments\h7s_fiber_test`
+
+Smoke-test entrypoint in this workspace:
+- `build_02/_smoke_test_h7s_fiber_test.ps1`
+
+Run it from PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "C:/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/build_02/_smoke_test_h7s_fiber_test.ps1"
 ```
 
-And the smoke test should produce:
-- `build_02\h7s_fiber_test_Boot.json`
+What the smoke test does:
+- locates `arm-none-eabi-g++.exe`;
+- injects the patched linker from `build_02` through `-B...`;
+- re-links the real `h7s_fiber_test` object set;
+- adds `-Wl,--dump-script-json=...`;
+- writes:
+  - `build_02/h7s_fiber_test_Boot.jsoncheck.elf`
+  - `build_02/h7s_fiber_test_Boot.jsoncheck.map`
+  - `build_02/h7s_fiber_test_Boot.json`
+- validates the resulting JSON with the built-in PowerShell structural checks in the smoke script.
 
-After a successful patch check, you should see:
+Smoke-test prerequisites:
+- the `h7s_fiber_test` project must already be built once, so `Boot\Debug\objects.list` already exists;
+- if the compiler is not on `PATH`, set `STM32_GCC` to the full path of `arm-none-eabi-g++.exe`.
+
+Expected success behavior:
+- the script exits without error;
+- it prints a summary object with fields such as `Format`, `MemoryRegions`, `OutputSections`, `InputSections`, `DiscardedInputSections`, and `Symbols`.
+
+Typical summary output looks like:
 
 ```text
-ok      : True
-message : all required files and glue snippets are present
+Json                   : C:\Users\admin\Documents\my_workspace\gnu\gnu-tools-for-stm32\build_02\h7s_fiber_test_Boot.json
+Format                 : ldscript-json 10.0
+EntrySymbol            : 0x8000529
+MemoryRegions          : 8
+OutputSections         : 30
+InputSections          : 1572
+DiscardedInputSections : 1192
+Symbols                : 804
 ```
 
-## EXPECTED FAILURE OUTPUT
+## Step 7. If Something Fails
 
-If something is wrong, these are the most common failures and what they mean.
-
-If the build command fails and you do not get a new `ld.exe`:
-- the source tree is not patched correctly yet;
-- one of the copied files is missing;
-- one of the five glue edits was not inserted in the right place.
+Most common failures:
 
 If the patch check says:
 
@@ -253,13 +263,12 @@ Patch check failed.
 
 it means:
 - one of the three copied files is missing;
-- or one of the five glue insertion snippets was not found where expected;
-- fix the missing piece first, then run the patch check again.
+- or one of the five glue insertion snippets was not found where expected.
 
-If the help check does not show `dump-script-json`:
-- the patched source was not rebuilt yet;
-- you are checking the wrong `ld.exe`;
-- the `lexsup.c` or `ldlex.h` glue code was not inserted correctly.
+If the build finishes without producing a new `ld.exe`:
+- the source tree is not patched correctly yet;
+- one of the copied files is missing;
+- one of the glue edits was inserted in the wrong place.
 
 If the smoke test says:
 
@@ -267,9 +276,8 @@ If the smoke test says:
 Required file is missing: ...\Boot\Debug\objects.list
 ```
 
-it means:
-- the `h7s_fiber_test` project has not been built yet;
-- build that STM32 project once first, so `objects.list` exists.
+it means the STM32 project has not been built yet.
+Build that STM32 project once first.
 
 If the smoke test says:
 
@@ -277,19 +285,8 @@ If the smoke test says:
 arm-none-eabi-g++.exe was not found. Put it on PATH or set $env:STM32_GCC ...
 ```
 
-it means:
-- the compiler was not found automatically;
-- add the compiler to `PATH`, or set `STM32_GCC` to the full executable path.
-
-If the smoke test says:
-
-```text
-jq.exe was not found on PATH
-```
-
-it means:
-- `jq` is missing from `PATH`;
-- install `jq` or add its folder to `PATH`.
+it means the compiler was not found automatically.
+Add the compiler to `PATH`, or set `STM32_GCC` to the full executable path.
 
 If you run `ld.exe` directly for the real STM32 smoke test and see:
 
@@ -297,16 +294,15 @@ If you run `ld.exe` directly for the real STM32 smoke test and see:
 cannot find libc.a
 ```
 
-it means:
-- you bypassed the compiler driver;
-- use `build_02/_smoke_test_h7s_fiber_test.ps1` or `arm-none-eabi-g++.exe`, not a direct raw `ld.exe` call for this project.
+it means you bypassed the compiler driver.
+Use `build_02/_smoke_test_h7s_fiber_test.ps1` or `arm-none-eabi-g++.exe`, not a raw direct `ld.exe` call for this project.
 
 If the smoke test finishes linking but validation fails:
 - the JSON contract no longer matches `json_patch/validate_core.jq`;
-- the serializer code and the validator are out of sync;
+- the serializer code and the smoke-test structural checks are out of sync;
 - re-check `ldscript_json_impl.inc`, `ldjson_compat.h`, and the example JSON files.
 
-## 1. What The Command Adds
+## Reference: What The Command Adds
 
 New linker option:
 - `--dump-script-json=FILE`
@@ -319,14 +315,16 @@ The current canonical top-level shape is:
 - `output`
 - `memory_regions`
 - `output_sections`
-- `script_variables`
+- `input_sections`
+- `discarded_input_sections`
+- `symbols`
 
 The current reference contract is:
 - `format.name = "ldscript-json"`
 - `format.major = 10`
 - `format.minor = 0`
 
-## 2. Final JSON Shape
+## Reference: Final JSON Shape
 
 The final JSON intentionally keeps one universal schema. There are no alternate
 profiles, no `views`, no `core`, no `capabilities`, no `schema_version`, and no
@@ -340,31 +338,34 @@ Canonical skeleton:
   "output": { "entry_symbol": "Reset_Handler" },
   "memory_regions": { "items": [], "by_name": {}, "null_name_ids": [] },
   "output_sections": { "items": [], "by_name": {}, "null_name_ids": [] },
-  "script_variables": { "items": [], "by_name": {}, "null_name_ids": [] }
+  "input_sections": { "items": [], "by_name": {}, "null_name_ids": [] },
+  "discarded_input_sections": [],
+  "symbols": { "items": [], "by_name": {}, "null_name_ids": [] }
 }
 ```
 
 Per-section payloads:
 - `output.entry_symbol`
-- `memory_regions.items[*]`: `id`, `name`, `origin_hex`, `length_hex`, `attrs`
-- `output_sections.items[*]`: `id`, `name`, `vma_region`, `lma_region`, `script_subsections`
-- `script_variables.items[*]`: `id`, `name`, `value_hex`, `section`
+- `memory_regions.items[*]`: `id`, `name`, `origin_hex`, `length_hex`, `attrs.required`, `attrs.forbidden`, `attrs.flags_hex`, `attrs.not_flags_hex`
+- `output_sections.items[*]`: `id`, `name`, `vma_region`, `lma_region`, `vma_hex`, `lma_hex`, `size_hex`, `script_subsections`
+- `input_sections.items[*]`: `id`, `name`, `discarded`, `output_section_id`, `owner_file`, `value_hex`, `size_hex`, `output_offset_hex`, `flags`
+- `discarded_input_sections[*]`: `input_section_id`, `discard_reason`
+- `symbols.items[*]`: `id`, `name`, `state`, `value_hex`, `size_hex`, `section`, `output_section_id`, `input_section_id`, `script_defined`
+- Note: absolute script-defined symbols such as `LOADADDR(.data)` results may stay `section = "ABS"` with `output_section_id = null`; this is expected and preserves the final linker value honestly.
+- Note: non-discarded debug/comment-style input sections may carry `output_section_id` while still keeping `value_hex` and `output_offset_hex` as `null` if `ld` does not materialize per-input placement.
+- Note: a defined symbol with non-`ABS` `section` and `output_section_id = null` is usually tied to a discarded input section, not a broken JSON export.
 
 `output.entry_symbol` is an opaque string copied from `ld`'s final
 `entry_symbol`. In practice it can be:
 - a symbol name such as `Reset_Handler`;
 - or a resolved numeric string such as `0x8000c09`.
 
-`script_variables` is intentionally narrow:
-- it includes only symbols that `ld` marks as defined by the linker script;
-- it does not include regular user-code functions or data symbols from `.o` files.
-
 Indexed collections always use:
 - `items`
 - `by_name`
 - `null_name_ids`
 
-`script_variables.value_hex`:
+`symbols.value_hex`:
 - a hex string when the linker resolved a concrete value;
 - `null` when the linker could not resolve a final numeric value.
 
@@ -372,7 +373,7 @@ For the strict machine-readable contract, see:
 - `json_patch/FORMAT.md`
 - `json_patch/validate_core.jq`
 
-## 3. Source Of Truth Files
+## Reference: Source Of Truth Files
 
 The patch package that should be treated as the source of truth is:
 - `json_patch/ldjson_options.def`
@@ -425,7 +426,7 @@ Why this matters:
 If this row is renamed or mistyped, the generated pieces shown below will no
 longer match each other.
 
-## 4. Exact Integration Points In ST ld
+## Reference: Exact Integration Points In ST ld
 
 Apply changes only in:
 - `src/binutils/ld/...`
@@ -751,7 +752,7 @@ Result:
 - gettext scanning sees the new help/error strings when autotools metadata is
   regenerated.
 
-## 5. Existing Build Dependency: pex-win32 Fallback
+## Reference: Existing Build Dependency: pex-win32 Fallback
 
 This workspace already contains a local fallback change in:
 - `gnu-tools-for-stm32-13.3.rel1.20250523-0900/src/binutils/libiberty/pex-win32.c`
@@ -764,7 +765,7 @@ Why it exists:
 
 This fallback is part of the current working build flow for `build_02`.
 
-## 6. Build Instructions Moved To build_02
+## Reference: Build Instructions Moved To build_02
 
 All build instructions for the current patched linker revision live in:
 - `build_02/README-BUILD.md`
@@ -777,7 +778,7 @@ All build instructions for the current patched linker revision live in:
 - the packaged drop-in linker folder;
 - the validation outputs for this revision.
 
-## 7. How To Run The Build
+## Reference: How To Run The Build
 
 Use the script:
 - `build_02/_run_build_02.sh`
@@ -845,7 +846,7 @@ The script:
 - packages a CubeIDE-style drop-in folder inside `build_02`;
 - checks that `ld --help` exposes `dump-script-json`.
 
-## 8. How To Validate The New Command
+## Reference: How To Validate The New Command
 
 After build, validate the command itself:
 
@@ -853,13 +854,16 @@ After build, validate the command itself:
 & "C:/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/build_02/_cubeide-arm-linker-st-13.3.rel1.20250523-0900-jsonpatch/ld.exe" --help | Select-String "dump-script-json"
 ```
 
-Validate the JSON contract on any produced file:
+If you want a strict standalone validator run outside the smoke test, validate any produced JSON file with:
 
 ```powershell
 jq -e -f "C:/Users/admin/Documents/my_workspace/gnu/gnu-tools-for-stm32/json_patch/validate_core.jq" out.json
 ```
 
-## 9. Real Project Smoke Test
+This `jq` validation is optional.
+The real smoke test already performs its own built-in PowerShell checks against the same contract shape.
+
+## Reference: Real Project Smoke Test
 
 Project available for a real linker test:
 - `C:\Users\admin\Documents\my_workspace\stm32\experiments\h7s_fiber_test`
@@ -886,13 +890,11 @@ What it does:
   - `build_02/h7s_fiber_test_Boot.jsoncheck.elf`
   - `build_02/h7s_fiber_test_Boot.jsoncheck.map`
   - `build_02/h7s_fiber_test_Boot.json`
-- validates the resulting JSON with `json_patch/validate_core.jq` using `jq.exe`
-  from `PATH`.
+- validates the resulting JSON with the built-in PowerShell structural checks in the smoke script.
 
 Prerequisites for the smoke test:
 - the `h7s_fiber_test` project must already be built at least once, so that
   `Boot\Debug\objects.list` already exists;
-- `jq.exe` must be available on `PATH`;
 - if the compiler is not on `PATH`, set `STM32_GCC` to the full path of
   `arm-none-eabi-g++.exe`.
 
@@ -910,3 +912,4 @@ If the build/test process uncovers anything missing, update:
 - `build_02/README-BUILD.md`
 
 so the instructions remain complete.
+

@@ -22,9 +22,7 @@
 
 #ifndef LDJSON_SYM_IS_DUMPABLE
 #define LDJSON_SYM_IS_DUMPABLE(H) \
-  ((H)->ldscript_def \
-   && ((H)->type == bfd_link_hash_defined \
-       || (H)->type == bfd_link_hash_defweak))
+  ((H) != NULL && (H)->type != bfd_link_hash_new)
 #endif
 
 #ifndef LDJSON_SYM_SECTION
